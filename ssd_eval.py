@@ -17,8 +17,10 @@ from bbox_util import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', default=0, type=int)
-parser.add_argument('--model')
-parser.add_argument('--def', dest='model_def')
+parser.add_argument('--model1')
+parser.add_argument('--model2')
+parser.add_argument('--def1', dest='model_def1')
+parser.add_argument('--def2', dest='model_def2')
 parser.add_argument('--val')
 parser.add_argument('--from', dest='from_ind', default=0, type=int)
 parser.add_argument('--to', dest='to_ind', default=-1, type=int)
@@ -46,18 +48,26 @@ bbox_draw_thresh = 0.1
 use_caffe_preproc = False
 print_time = False
 
-model_def = args.model_def
-model_weights = args.model
+image_shape = 700, 700
 
-net = caffe.Net(model_def,      # defines the structure of the model
-                model_weights,  # contains the trained weights
-                caffe.TEST)     # use test mode (e.g., don't perform dropout)
+nets = []
+for i in range(2):
+    model_weights = getattr(args, 'model%i' % (i+1))
+    model_def = getattr(args, 'model_def%i' % (i+1))
+    if model_weights and model_def:
+        net = caffe.Net(model_def,
+                        model_weights,  # contains the trained weights
+                        caffe.TEST)     # use test mode (e.g., don't perform dropout)
 
-image_shape = net.blobs['data'].data.shape[2:]
+        net.blobs['data'].reshape(1, 3, image_shape[0], image_shape[1])
+
+        nets.append(net)
+
+assert nets, 'No model specified'
 
 # input preprocessing: 'data' is the name of the input blob == net.inputs[0]
 BGR_MEAN = [104,117,123]
-transformer = caffe.io.Transformer({'data': net.blobs['data'].data.shape})
+transformer = caffe.io.Transformer({'data': (1, 3, image_shape[0], image_shape[1])})
 transformer.set_transpose('data', (2, 0, 1))
 transformer.set_mean('data', np.array([104,117,123])) # mean pixel
 
@@ -133,8 +143,8 @@ def augment(image_name):
     image_aug.append({'image': image_zoom_out, 'scale': zoom_out, 'flip': False})
 
     fliplr = iaa.Fliplr(p=1, deterministic=True)
-    # image_fliplr = fliplr.augment_image(image_zoom_in)
-    # image_aug.append({'image': image_fliplr, 'scale': zoom_in, 'flip': True})
+    image_fliplr = fliplr.augment_image(image)
+    image_aug.append({'image': image_fliplr, 'scale': 0., 'flip': True})
     image_fliplr = fliplr.augment_image(image_zoom_out)
     image_aug.append({'image': image_fliplr, 'scale': zoom_out, 'flip': True})
 
@@ -226,16 +236,22 @@ for img_ind in xrange(img_ind_from, img_ind_to):
     t_prep = time.time() - start_prep
     if print_time: print "preproc time: %f" % t_prep
 
-    if image_batch.shape[0] != net.blobs['data'].data.shape[0]:
-        net.blobs['data'].reshape(image_batch.shape[0], 3, image_shape[0], image_shape[1])
+    if image_batch.shape[0] != nets[0].blobs['data'].data.shape[0]:
+        for net in nets:
+            net.blobs['data'].reshape(image_batch.shape[0], 3, image_shape[0], image_shape[1])
 
     start_detect = time.time()
-    net.blobs['data'].data[...] = image_batch
-    detections = net.forward()['detection_out']
+    detections = []
+    for net in nets:
+        net.blobs['data'].data[...] = image_batch
+        net_det = net.forward()['detection_out']
+        detections.append(net_det)
     t_detect = time.time() - start_detect
     if print_time: print 'detect time: %f' % t_detect
 
     start_filter = time.time()
+
+    detections = np.concatenate(detections, axis=2)
 
     conf_mask = detections[0,0,:,2] >= conf_thresh
     det_img  = detections[0,0,conf_mask,0].astype(int)
