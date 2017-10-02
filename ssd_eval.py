@@ -22,7 +22,8 @@ parser.add_argument('--def', dest='model_def')
 parser.add_argument('--val')
 parser.add_argument('--from', dest='from_ind', default=0, type=int)
 parser.add_argument('--to', dest='to_ind', default=-1, type=int)
-parser.add_argument('--sfx')
+parser.add_argument('--conf', default=0.08, type=float)
+parser.add_argument('--sfx', default='')
 parser.add_argument('--no-header', action='store_true')
 
 args = parser.parse_args()
@@ -35,7 +36,8 @@ test_image_root = os.path.abspath('./data/test')
 image_root = val_image_root if args.val else test_image_root
 get_image_path = lambda image_name: os.path.join(image_root, image_name)
 
-conf_thresh = 0.01
+conf_thresh = args.conf
+box_size_thresh = 12
 W, H = 1280, 720
 
 save_img = False
@@ -235,9 +237,7 @@ for img_ind in xrange(img_ind_from, img_ind_to):
 
     start_filter = time.time()
 
-    det_conf = detections[0,0,:,2]
-    conf_mask = det_conf >= conf_thresh
-
+    conf_mask = detections[0,0,:,2] >= conf_thresh
     det_img  = detections[0,0,conf_mask,0].astype(int)
     det_conf = detections[0,0,conf_mask,2]
     det_xmin = detections[0,0,conf_mask,3]
@@ -271,8 +271,17 @@ for img_ind in xrange(img_ind_from, img_ind_to):
                 y0 < th or y1 > H-th:
                 continue
 
+        bw, bh = x1 - x0, y1 - y0
+        if not (#0 <= x0 < W and 0 <= x1 < W and 0 <= y0 < H and 0 <= y1 <= H and
+                bw >= box_size_thresh and bh >= box_size_thresh):
+            continue
+
         boxes_list.append([x0, y0, x1, y1])
         conf_list.append(conf)
+
+    if not boxes_list:
+        print image_name + ' - no det'
+        continue
 
     nms_iou_thresh = 0.75
     box_avg_type = 'mean'
