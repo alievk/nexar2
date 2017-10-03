@@ -26,3 +26,4 @@ Evaluate:
 Note:
 - --def1 and --def2 must be the same deploy.prototxt files
 - you can run ssd_eval.py in parallel on multiple GPUs using --gpu option and --from A and --to B options, where A and B is the start and the end image number. this will produce file in ./out called test_A-B_.csv. then you have to concatenate these files into one (don't forget to remove the headers from the csv files when concatenating).
+- if two models does not fit into the memory, you can either specify a single model through --model1 and --def1 or disable some augmentations [here](https://github.com/duburlan/nexar2/blob/724ce584879dd34722f1db77c39e09c62bb629d9/ssd_eval.py#L116).
